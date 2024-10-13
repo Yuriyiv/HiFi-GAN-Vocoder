@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from torch import Tensor, nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 
-from src.model import BaselineModel
+# from src.model import BaselineModel
 
 
 class Attention(nn.Module):
@@ -48,7 +48,7 @@ class Attention(nn.Module):
         self.value = nn.Linear(input_dim, value_dim, bias=False)
         self.mask = mask
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Performs the forward pass of the Attention module.
         Args:
@@ -63,8 +63,8 @@ class Attention(nn.Module):
             In this implementation input_dim = value_dim
         """
 
-        def attention_compute(q, k, v, mask):
-            F.scaled_dot_product_attention(q, k, v, mask, dropout_p=0)
+        def _attention_compute(q, k, v, mask):
+            return F.scaled_dot_product_attention(q, k, v, mask, dropout_p=0)
 
         possible_backends = [
             SDPBackend.FLASH_ATTENTION,
@@ -73,7 +73,7 @@ class Attention(nn.Module):
         ]
 
         with sdpa_kernel(possible_backends):
-            attention = attention_compute(
+            attention = _attention_compute(
                 self.query(x), self.key(x), self.value(x), self.mask
             )
 
@@ -105,7 +105,7 @@ class MultiHeadAttention(nn.Module):
         )
         self.linear = nn.Linear(output_dim, output_dim, bias=False)
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Performs the forward pass of the MultiHeadAttention module.
 
@@ -128,7 +128,18 @@ class MultiHeadAttention(nn.Module):
 
 
 class MultiHeadSelfAttentionModule(nn.Module):
-    def __init__(self, input_dim, output_dim, num_heads, dropout) -> None:
+    def __init__(
+        self, input_dim: int, output_dim: int, num_heads: int, dropout: float
+    ) -> None:
+        """
+        Initializes the multi-head self-attention module with layer normalization and dropout.
+
+        Args:
+            input_dim (int): The dimensionality of the input.
+            output_dim (int): The dimensionality of the output.
+            num_heads (int): Number of attention heads.
+            dropout (float): Dropout rate to be applied after the attention layer.
+        """
         super().__init__()
         self.layer_norm = nn.LayerNorm(input_dim)
         self.multi_head_self_attention = MultiHeadAttention(
@@ -136,7 +147,16 @@ class MultiHeadSelfAttentionModule(nn.Module):
         )
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass for the multi-head self-attention module.
+
+        Args:
+            x (Tensor): Input tensor of shape (N, L, input_dim)
+
+        Returns:
+            Tensor: Output tensor of shape (N, L, output_dim) with added residual connection.
+        """
         resid = x
         x = self.layer_norm(x)
         x = self.multi_head_self_attention(x)
@@ -145,7 +165,22 @@ class MultiHeadSelfAttentionModule(nn.Module):
 
 
 class ConvModule(nn.Module):
-    def __init__(self, dim, conv_exp_factor, depthwise_ker_size, bias=False) -> None:
+    def __init__(
+        self,
+        dim: int,
+        conv_exp_factor: int,
+        depthwise_ker_size: int,
+        bias: bool = False,
+    ) -> None:
+        """
+        Initializes the convolution module with normalization, GatedLinearUnit activation, and depthwise convolutions.
+
+        Args:
+            dim (int): Input/output dimensionality.
+            conv_exp_factor (int): Expansion factor for pointwise convolutions.
+            depthwise_ker_size (int): Kernel size for the depthwise convolution.
+            bias (bool): Whether to use bias in convolution layers. Defaults to False.
+        """
         super().__init__()
         assert conv_exp_factor % 2 == 0, "conv_exp_factor must be divisible by 2"
         self.layer_norm = nn.LayerNorm(dim)
@@ -168,10 +203,21 @@ class ConvModule(nn.Module):
         )
         self.dropout = nn.Dropout()
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        Forward pass for the convolution module.
+
+        Args:
+            x (Tensor): Input tensor of shape (batch_size, sequence_length, channels).
+
+        Returns:
+            Tensor: Output tensor with the same shape as input, after convolution and residual connection.
+        """
         resid = x
         x = self.layer_norm(x)
-        # x = x.transpose(1, 2)
+        x = x.permute(
+            (0, 2, 1)
+        )  # (batch_size, length, channels) -> (batch_size, channels, length)
         x = self.pointwise_first(x)
         x = self.glu(x, dim=1)
         x = self.depthwise(x)
@@ -179,13 +225,22 @@ class ConvModule(nn.Module):
         x = self.swish(x)
         x = self.pointwise_second(x)
         x = self.dropout(x)
-        return x + resid
+        return x.permute((0, 2, 1)) + resid
 
 
 class FeedForwardModule(nn.Module):
     def __init__(
         self, input_dim: int, hidden_dim: int, drop_rate: float = 0.1, bias: bool = True
     ) -> None:
+        """
+        Initializes the feed-forward module with layer normalization and SiLU activation.
+
+        Args:
+            input_dim (int): Dimensionality of the input.
+            hidden_dim (int): Dimensionality of the hidden layer.
+            drop_rate (float): Dropout rate. Defaults to 0.1.
+            bias (bool): Whether to use bias in linear layers. Defaults to True.
+        """
         super().__init__()
         self.ff_layer = nn.Sequential(
             nn.LayerNorm(input_dim),
@@ -196,7 +251,7 @@ class FeedForwardModule(nn.Module):
             nn.Dropout(drop_rate),
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         Performs the forward pass of the FeedForward module.
 
@@ -210,14 +265,40 @@ class FeedForwardModule(nn.Module):
 
 
 class ConformerBlock(nn.Module):
+    """
+    A single block in the modified Conformer architecture that includes feed-forward layers,
+    multi-head self-attention, and convolutional modules.
+    Originally proposed in https://arxiv.org/abs/2005.08100
+
+    It applies the following structure:
+    1. Feed-forward module
+    2. Multi-head self-attention
+    3. Convolutional module
+    4. Feed-forward module
+    5. Layer normalization
+
+    The block capturing both local and global dependencies using
+    a combination of attention and convolution mechanisms.
+
+    Args:
+        input_dim (int): The dimensionality of the input and output features.
+        feed_forw_dim (int): The dimensionality of the hidden layer in the feed-forward modules.
+        num_att_heads (int): The number of attention heads in the multi-head self-attention module.
+        conv_exp_factor (int): The expansion factor for the convolutional layers.
+        depthwise_ker_size (int): The kernel size for depthwise convolutions in the ConvModule.
+    """
+
     def __init__(
         self,
-        input_dim,
-        feed_forw_dim,
-        num_att_heads,
-        conv_exp_factor,
-        depthwise_ker_size,
+        input_dim: int,
+        feed_forw_dim: int,
+        num_att_heads: int,
+        conv_exp_factor: int,
+        depthwise_ker_size: int,
     ) -> None:
+        """
+        Initializes the components of the ConformerBlock
+        """
         super().__init__()
         self.feed_forward_first = FeedForwardModule(
             input_dim, feed_forw_dim
@@ -229,7 +310,7 @@ class ConformerBlock(nn.Module):
         self.feed_forward_second = FeedForwardModule(input_dim, feed_forw_dim)
         self.layer_norm = nn.LayerNorm(input_dim)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         """
         Performs the forward pass of the ConformerBlock.
 
@@ -251,6 +332,25 @@ class ConformerBlock(nn.Module):
 
 
 class ConformerEncoder(nn.Module):
+    """
+    The ConformerEncoder is a stack of ConformerBlocks, each block consisting of:
+    - Feed-forward module
+    - Multi-head self-attention
+    - Convolutional module
+    - Layer normalization
+
+    The encoder processes input sequences by passing them through a series of Conformer blocks
+    after subsampling and linear layer.
+
+    Args:
+        input_dim (int): The dimensionality of the input features.
+        num_conform_blocks (int): The number of Conformer blocks to stack in the encoder.
+        num_att_heads (int): The number of attention heads in the multi-head self-attention module.
+        depthwise_ker_size (int): The kernel size for the depthwise convolution in the convolutional module.
+        conv_exp_factor (int): Expansion factor for the pointwise convolution in the convolutional module.
+        feed_forw_dim (Optional[int]): The hidden dimensionality of the feed-forward module. Defaults to 4 * input_dim if not specified.
+    """
+
     def __init__(
         self,
         input_dim: int,
@@ -260,9 +360,13 @@ class ConformerEncoder(nn.Module):
         conv_exp_factor: int = 2,
         feed_forw_dim: Optional[int] = None,
     ) -> None:
+        """
+        Initializes the ConformerEncoder
+        """
         super().__init__()
         feed_forw_dim = feed_forw_dim or 4 * input_dim
-        self.subsampler = nn.Identity()
+        # Comment: we will use subsampler outside of ConformerEncoder class
+        # self.subsampler = ConvSubsampler(input_dim)
         self.linear = nn.Linear(input_dim, input_dim)
         self.dropout = nn.Dropout()
         self.conformer_blocks = nn.ModuleList(
@@ -278,7 +382,7 @@ class ConformerEncoder(nn.Module):
             ]
         )
 
-    def forward(self, x) -> Tensor:
+    def forward(self, x: Tensor) -> Tensor:
         """
         Performs the forward pass of the ConformerEncoder.
 
@@ -289,3 +393,6 @@ class ConformerEncoder(nn.Module):
             Tensor: Output tensor of  shape ().
         """
         x = self.linear(x)
+        x = self.dropout(x)
+        x = self.conformer_blocks(x)
+        return x
