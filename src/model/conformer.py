@@ -145,26 +145,26 @@ class MultiHeadSelfAttentionModule(nn.Module):
 
 
 class ConvModule(nn.Module):
-    def __init__(self, dim, exp_factor, depthwise_ker_size, bias=False) -> None:
+    def __init__(self, dim, conv_exp_factor, depthwise_ker_size, bias=False) -> None:
         super().__init__()
-        assert exp_factor % 2 == 0, "exp_factor must be divisible by 2"
+        assert conv_exp_factor % 2 == 0, "conv_exp_factor must be divisible by 2"
         self.layer_norm = nn.LayerNorm(dim)
         self.pointwise_first = nn.Conv1d(
-            dim, dim * exp_factor, kernel_size=1, bias=bias
+            dim, dim * conv_exp_factor, kernel_size=1, bias=bias
         )
         self.glu = nn.GLU(dim=1)
         self.depthwise = nn.Conv1d(
-            dim * exp_factor // 2,
-            dim * exp_factor // 2,
+            dim * conv_exp_factor // 2,
+            dim * conv_exp_factor // 2,
             kernel_size=depthwise_ker_size,
             padding="same",
             bias=bias,
-            groups=dim * exp_factor // 2,
+            groups=dim * conv_exp_factor // 2,
         )
-        self.batch_norm = nn.BatchNorm1d(dim * exp_factor // 2)
+        self.batch_norm = nn.BatchNorm1d(dim * conv_exp_factor // 2)
         self.swish = nn.SiLU()
         self.pointwise_second = nn.Conv1d(
-            dim * exp_factor // 2, dim, kernel_size=1, bias=bias
+            dim * conv_exp_factor // 2, dim, kernel_size=1, bias=bias
         )
         self.dropout = nn.Dropout()
 
@@ -183,14 +183,16 @@ class ConvModule(nn.Module):
 
 
 class FeedForwardModule(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int, drop_rate: float = 0.1) -> None:
+    def __init__(
+        self, input_dim: int, hidden_dim: int, drop_rate: float = 0.1, bias: bool = True
+    ) -> None:
         super().__init__()
         self.ff_layer = nn.Sequential(
             nn.LayerNorm(input_dim),
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(input_dim, hidden_dim, bias=bias),
             nn.SiLU(),
             nn.Dropout(drop_rate),
-            nn.Linear(hidden_dim, input_dim),
+            nn.Linear(hidden_dim, input_dim, bias=bias),
             nn.Dropout(drop_rate),
         )
 
@@ -209,7 +211,12 @@ class FeedForwardModule(nn.Module):
 
 class ConformerBlock(nn.Module):
     def __init__(
-        self, input_dim, feed_forw_dim, num_att_heads, exp_factor, depthwise_ker_size
+        self,
+        input_dim,
+        feed_forw_dim,
+        num_att_heads,
+        conv_exp_factor,
+        depthwise_ker_size,
     ) -> None:
         super().__init__()
         self.feed_forward_first = FeedForwardModule(
@@ -218,7 +225,7 @@ class ConformerBlock(nn.Module):
         self.multi_head_self_attention = MultiHeadSelfAttentionModule(
             input_dim, input_dim, num_att_heads
         )
-        self.conv_block = ConvModule(input_dim, exp_factor, depthwise_ker_size)
+        self.conv_block = ConvModule(input_dim, conv_exp_factor, depthwise_ker_size)
         self.feed_forward_second = FeedForwardModule(input_dim, feed_forw_dim)
         self.layer_norm = nn.LayerNorm(input_dim)
 
@@ -246,14 +253,15 @@ class ConformerBlock(nn.Module):
 class ConformerEncoder(nn.Module):
     def __init__(
         self,
-        input_dim,
-        feed_forw_dim,
-        num_conform_blocks,
-        num_att_heads,
-        exp_factor,
-        depthwise_ker_size,
+        input_dim: int,
+        num_conform_blocks: int,
+        num_att_heads: int,
+        depthwise_ker_size: int,
+        conv_exp_factor: int = 2,
+        feed_forw_dim: Optional[int] = None,
     ) -> None:
         super().__init__()
+        feed_forw_dim = feed_forw_dim or 4 * input_dim
         self.subsampler = nn.Identity()
         self.linear = nn.Linear(input_dim, input_dim)
         self.dropout = nn.Dropout()
@@ -263,7 +271,7 @@ class ConformerEncoder(nn.Module):
                     input_dim,
                     feed_forw_dim,
                     num_att_heads,
-                    exp_factor,
+                    conv_exp_factor,
                     depthwise_ker_size,
                 )
                 for _ in range(num_conform_blocks)
@@ -280,3 +288,4 @@ class ConformerEncoder(nn.Module):
         Returns:
             Tensor: Output tensor of  shape ().
         """
+        x = self.linear(x)
