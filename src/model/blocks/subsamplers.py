@@ -77,11 +77,17 @@ class BaseConvSubsampler(nn.Module):
 
 class ConvSubsampler(nn.Module):
     """
+    Basic Convolution Subsampler.
+    Padded version for simpler pipeline.
+    Reduce frame rate from hop_length to 1/4 * hop_length
+    For example, with hop_length = 160 (10 ms) we get 40 ms after output.
+
     Args:
-        input_dim (int): The number of input channels.
+        input_dim (int): The number of input channels (usually 1 for spectrograms).
         out_dim (int): The number of output channels.
         ker_size (int): The size of the convolution kernel. Defaults to 3.
         stride (int): The stride of the convolution. Defaults to 2.
+        depthwise (bool): Whether to use depthwise separable convolutions. Defaults to False.
     """
 
     def __init__(
@@ -97,11 +103,17 @@ class ConvSubsampler(nn.Module):
 
 class ConvDepthwiseSubsampler(nn.Module):
     """
+    Depthwise Convolution Subsampler.
+    Padded version for simpler pipeline.
+    Reduce frame rate from hop_length to 1/4 * hop_length
+    For example, with hop_length = 160 (10 ms) we get 40 ms after output.
+
     Args:
-        input_dim (int): The number of input channels.
+        input_dim (int): The number of input channels (usually 1 for spectrograms).
         out_dim (int): The number of output channels.
         ker_size (int): The size of the convolution kernel. Defaults to 3.
         stride (int): The stride of the convolution. Defaults to 2.
+        depthwise (bool): Whether to use depthwise separable convolutions. Defaults to False.
     """
 
     def __init__(
@@ -109,6 +121,6 @@ class ConvDepthwiseSubsampler(nn.Module):
     ) -> None:
         """
         With default params subsamples with ~1/4x rate.
-        Reduce numbers of params due to using Depthwise separation tecnique
+        Reduce numbers of params due to using Depthwise separation tecqnique
         """
         super().__init__(input_dim, out_dim, ker_size, stride, depthwise=True)
