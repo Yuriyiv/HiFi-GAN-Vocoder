@@ -72,7 +72,7 @@ class BaseConvSubsampler(nn.Module):
 
         x = self.conv_layers(x)  # [batch_size, channel_dim, time, freq]
 
-        return x.transpose(1, 2).flatten(2)  # [batch_size, time, channel_dim * freq]
+        return x
 
 
 class ConvSubsampler(nn.Module):
