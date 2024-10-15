@@ -12,9 +12,12 @@ class BaseConvSubsampler(nn.Module):
     ) -> None:
         """
         Base class for ConvSubsampler with the option to use depthwise separable convolutions.
+        Padded version for simpler pipeline.
+        Reduce frame rate from hop_length to 1/4 * hop_length
+        For example, with hop_length = 160 (10 ms) we get 40 ms after output.
 
         Args:
-            input_dim (int): The number of input channels.
+            input_dim (int): The number of input channels (usually 1 for spectrograms).
             out_dim (int): The number of output channels.
             ker_size (int): The size of the convolution kernel. Defaults to 3.
             stride (int): The stride of the convolution. Defaults to 2.
@@ -30,30 +33,55 @@ class BaseConvSubsampler(nn.Module):
                     kernel_size=ker_size,
                     stride=stride,
                     groups=input_dim,
+                    padding="same",
                 ),
                 nn.SiLU(),
-                nn.Conv2d(out_dim, out_dim, kernel_size=1),
+                nn.Conv2d(out_dim, out_dim, kernel_size=1, padding="same"),
                 nn.SiLU(),
             )
         else:
             self.conv_layers = nn.Sequential(
-                nn.Conv2d(input_dim, out_dim, kernel_size=ker_size, stride=stride),
+                nn.Conv2d(
+                    input_dim,
+                    out_dim,
+                    kernel_size=ker_size,
+                    stride=stride,
+                    padding="same",
+                ),
                 nn.SiLU(),
-                nn.Conv2d(out_dim, out_dim, kernel_size=ker_size, stride=stride),
+                nn.Conv2d(
+                    out_dim,
+                    out_dim,
+                    kernel_size=ker_size,
+                    stride=stride,
+                    padding="same",
+                ),
                 nn.SiLU(),
             )
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.conv_layers(x)
+        """
+        Args:
+            x (Tensor): Input tensor (#batch, time, freq).
+
+        Returns:
+            Tensor: Subsampled and encoded tensor (#batch, new_time, new_dim).
+        """
+        # Add channel dimension for Conv2d
+        x = x.unsqueeze(1)  # [batch_size, 1, time, freq]
+
+        x = self.conv_layers(x)  # [batch_size, channel_dim, time, freq]
+
+        return x.transpose(1, 2).flatten(2)  # [batch_size, time, channel_dim * freq]
 
 
 class ConvSubsampler(nn.Module):
     """
     Args:
-    input_dim (int): The number of input channels.
-    out_dim (int): The number of output channels.
-    ker_size (int): The size of the convolution kernel. Defaults to 3.
-    stride (int): The stride of the convolution. Defaults to 2.
+        input_dim (int): The number of input channels.
+        out_dim (int): The number of output channels.
+        ker_size (int): The size of the convolution kernel. Defaults to 3.
+        stride (int): The stride of the convolution. Defaults to 2.
     """
 
     def __init__(
@@ -70,10 +98,10 @@ class ConvSubsampler(nn.Module):
 class ConvDepthwiseSubsampler(nn.Module):
     """
     Args:
-    input_dim (int): The number of input channels.
-    out_dim (int): The number of output channels.
-    ker_size (int): The size of the convolution kernel. Defaults to 3.
-    stride (int): The stride of the convolution. Defaults to 2.
+        input_dim (int): The number of input channels.
+        out_dim (int): The number of output channels.
+        ker_size (int): The size of the convolution kernel. Defaults to 3.
+        stride (int): The stride of the convolution. Defaults to 2.
     """
 
     def __init__(
