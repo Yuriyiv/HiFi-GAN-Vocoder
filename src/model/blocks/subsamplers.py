@@ -43,11 +43,19 @@ class BaseConvSubsampler(nn.Module):
                 nn.SiLU(),
             )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return self.conv_layers(x)
 
 
 class ConvSubsampler(nn.Module):
+    """
+    Args:
+    input_dim (int): The number of input channels.
+    out_dim (int): The number of output channels.
+    ker_size (int): The size of the convolution kernel. Defaults to 3.
+    stride (int): The stride of the convolution. Defaults to 2.
+    """
+
     def __init__(
         self, input_dim: int, out_dim: int, ker_size: int = 3, stride: int = 2
     ) -> None:
@@ -60,6 +68,14 @@ class ConvSubsampler(nn.Module):
 
 
 class ConvDepthwiseSubsampler(nn.Module):
+    """
+    Args:
+    input_dim (int): The number of input channels.
+    out_dim (int): The number of output channels.
+    ker_size (int): The size of the convolution kernel. Defaults to 3.
+    stride (int): The stride of the convolution. Defaults to 2.
+    """
+
     def __init__(
         self, input_dim: int, out_dim: int, ker_size: int = 3, stride: int = 2
     ) -> None:
