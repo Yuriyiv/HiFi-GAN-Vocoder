@@ -18,7 +18,7 @@ class LogTransform(nn.Module):
         super().__init__()
         self.eps = eps
 
-    def forward(self, mel_spectrogram: Tensor) -> Tensor:
+    def __call__(self, mel_spectrogram: Tensor) -> Tensor:
         """
         Applies a logarithmic transformation to the mel-spectrogram.
 
