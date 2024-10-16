@@ -18,14 +18,14 @@ def collate_fn(dataset_items: List[Dict]) -> Dict[str, Tensor]:
             of the tensors.
     """
     audios = [item["audio"].squeeze(0) for item in dataset_items]
-    # [1, num_samples] -> [num_samples]
-    # [num_samples_1, num_samples_2, ..., num_samples_N]
+    # Each audio: [1, num_samples] -> [num_samples]
+    # audios list: [num_samples_1, num_samples_2, ..., num_samples_N]
 
     # [1, freq_bins, time_steps] -> [freq_bins, time_steps]
     spectrograms = [
         item["spectrogram"].squeeze(0).transpose(0, 1) for item in dataset_items
     ]
-    # spectrograms list: [time_steps_1, freq_bins], [time_steps_2, freq_bins], ..., [time_steps_N, freq_bins]
+    # [time_steps_1, freq_bins], [time_steps_2, freq_bins], ..., [time_steps_N, freq_bins]
 
     text_encoded = [item["text_encoded"].squeeze(0) for item in dataset_items]
     # [1, sequence_length] -> [sequence_length]

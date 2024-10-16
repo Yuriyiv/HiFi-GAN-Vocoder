@@ -533,7 +533,7 @@ class ConformerModel(BaseModelABC):
             conv_expansion_factor,
             feed_forw_dim,
             pos_encoder,
-            # rotary_dim=encoder_dim // 2
+            rotary_dim=encoder_dim // 2,
         )
         self.decoder = decoder_cls(encoder_dim, decoder_dim, batch_first=True)
         self.classification_head = nn.Linear(
