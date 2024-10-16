@@ -1,6 +1,8 @@
 torch==2.4.0
 torchvision==0.19.0
 torchaudio==2.4.0
+torchtune
+torchao
 soundfile
 numpy==1.26.4
 torch_audiomentations
@@ -13,7 +15,10 @@ hydra-core
 datasets[audio]==2.21.0
 editdistance
 pyctcdecode
+# https://github.com/kpu/kenlm/archive/master.zip
 
+# pytest
+wget
 black
 isort
 pre-commit
