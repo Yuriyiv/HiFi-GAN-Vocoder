@@ -416,6 +416,8 @@ class ConformerEncoder(nn.Module):
                 input_dim % 2 == 0
             ), "input_dim must be even for RotaryPositionalEmbeddings"
             self.rotary_dim = input_dim // 2
+        else:
+            self.rotary_dim = rotary_dim
 
         feed_forw_dim = feed_forw_dim or 4 * input_dim
         self.conformer_blocks = nn.ModuleList(
@@ -430,7 +432,7 @@ class ConformerEncoder(nn.Module):
                 for _ in range(num_conform_blocks)
             ]
         )
-        self.pos_enc = pos_encoder(self.rotary_dim)
+        # self.pos_enc = pos_encoder(self.rotary_dim)
 
     def forward(self, x: Tensor, mask: Optional[Tensor] = None) -> Tensor:
         """
