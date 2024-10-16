@@ -1,5 +1,50 @@
+import abc
+
 from torch import nn
 from torch.nn import Sequential
+
+
+class BaseModelABC(nn.Module, abc.ABC):
+    """
+    Abstract base model class with some common utility methods.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    @abc.abstractmethod
+    def forward(self, *inputs):
+        """
+        Forward pass method that needs to be implemented in the subclass.
+        """
+        pass
+
+    @abc.abstractmethod
+    def transform_input_lengths(self, input_lengths):
+        """
+        Method to transform input lengths. Must be implemented in the subclass.
+        """
+        pass
+
+    def count_parameters(self):
+        """
+        Returns the total and trainable parameter counts in the model.
+        """
+        all_parameters = sum([p.numel() for p in self.parameters()])
+        trainable_parameters = sum(
+            [p.numel() for p in self.parameters() if p.requires_grad]
+        )
+        return all_parameters, trainable_parameters
+
+    def __str__(self):
+        """
+        Model prints with the number of parameters.
+        """
+        all_parameters, trainable_parameters = self.count_parameters()
+        result_info = super().__str__()
+        result_info += f"\nAll parameters: {all_parameters}"
+        result_info += f"\nTrainable parameters: {trainable_parameters}"
+        return result_info
 
 
 class BaselineModel(nn.Module):
@@ -52,18 +97,3 @@ class BaselineModel(nn.Module):
             output_lengths (Tensor): new temporal lengths
         """
         return input_lengths  # we don't reduce time dimension here
-
-    def __str__(self):
-        """
-        Model prints with the number of parameters.
-        """
-        all_parameters = sum([p.numel() for p in self.parameters()])
-        trainable_parameters = sum(
-            [p.numel() for p in self.parameters() if p.requires_grad]
-        )
-
-        result_info = super().__str__()
-        result_info = result_info + f"\nAll parameters: {all_parameters}"
-        result_info = result_info + f"\nTrainable parameters: {trainable_parameters}"
-
-        return result_info
