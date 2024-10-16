@@ -12,50 +12,40 @@ class BaseConvSubsampler(nn.Module):
     ) -> None:
         """
         Base class for ConvSubsampler with the option to use depthwise separable convolutions.
-        Padded version for simpler pipeline.
+        Not padded version for simpler pipeline.
         Reduce frame rate from hop_length to 1/4 * hop_length
         For example, with hop_length = 160 (10 ms) we get 40 ms after output.
 
         Args:
-            input_dim (int): The number of input channels (usually 1 for spectrograms).
             out_dim (int): The number of output channels.
             ker_size (int): The size of the convolution kernel. Defaults to 3.
             stride (int): The stride of the convolution. Defaults to 2.
             depthwise (bool): Whether to use depthwise separable convolutions. Defaults to False.
         """
         super().__init__()
+        # self.pad = nn.ConstantPad2d((0, 0, 0, 4), 0.0)
+        self.ker_size = ker_size
+        self.stride = stride
+        self.depthwise = depthwise
+        # output_dim = compute_output_shape(input_dim, ker_size, stride)
+        # self.output_dim = compute_output_shape(output_dim, ker_size, stride)
 
         if depthwise:
             self.conv_layers = nn.Sequential(
                 nn.Conv2d(
-                    input_dim,
-                    out_dim,
-                    kernel_size=ker_size,
-                    stride=stride,
-                    groups=input_dim,
-                    padding="same",
+                    1, out_dim, kernel_size=ker_size, stride=stride, groups=1, padding=0
                 ),
                 nn.SiLU(),
-                nn.Conv2d(out_dim, out_dim, kernel_size=1, padding="same"),
+                nn.Conv2d(
+                    out_dim, out_dim, kernel_size=1, stride=stride
+                ),  # , padding="same"
                 nn.SiLU(),
             )
         else:
             self.conv_layers = nn.Sequential(
-                nn.Conv2d(
-                    input_dim,
-                    out_dim,
-                    kernel_size=ker_size,
-                    stride=stride,
-                    padding="same",
-                ),
+                nn.Conv2d(1, out_dim, kernel_size=ker_size, stride=stride),
                 nn.SiLU(),
-                nn.Conv2d(
-                    out_dim,
-                    out_dim,
-                    kernel_size=ker_size,
-                    stride=stride,
-                    padding="same",
-                ),
+                nn.Conv2d(out_dim, out_dim, kernel_size=ker_size, stride=stride),
                 nn.SiLU(),
             )
 
@@ -65,17 +55,26 @@ class BaseConvSubsampler(nn.Module):
             x (Tensor): Input tensor (#batch, time, freq).
 
         Returns:
-            Tensor: Subsampled and encoded tensor (#batch, new_time, new_dim).
+            Tensor: Subsampled and encoded tensor (#batch, channel_dim, new_time, new_dim).
         """
         # Add channel dimension for Conv2d
         x = x.unsqueeze(1)  # [batch_size, 1, time, freq]
 
-        x = self.conv_layers(x)  # [batch_size, channel_dim, time, freq]
+        x = self.conv_layers(
+            x
+        )  # [batch_size, channel_dim (=out_dim), time_subsampled, freq_subsampled]
 
         return x
 
+    def get_info(self):
+        return {
+            "stride": self.stride,
+            "ker_size": self.ker_size,
+            "depthwise": self.depthwise,
+        }
 
-class ConvSubsampler(nn.Module):
+
+class ConvSubsampler(BaseConvSubsampler):
     """
     Basic Convolution Subsampler.
     Padded version for simpler pipeline.
@@ -100,8 +99,17 @@ class ConvSubsampler(nn.Module):
         """
         super().__init__(input_dim, out_dim, ker_size, stride, depthwise=False)
 
+    def get_stride(self):
+        return super().get_info()["stride"]
 
-class ConvDepthwiseSubsampler(nn.Module):
+    def get_ker_size(self):
+        return super().get_info()["ker_size"]
+
+    def get_depthwise_status(self):
+        return super().get_info()["depthwise"]
+
+
+class ConvDepthwiseSubsampler(BaseConvSubsampler):
     """
     Depthwise Convolution Subsampler.
     Padded version for simpler pipeline.
@@ -124,3 +132,12 @@ class ConvDepthwiseSubsampler(nn.Module):
         Reduce numbers of params due to using Depthwise separation tecqnique
         """
         super().__init__(input_dim, out_dim, ker_size, stride, depthwise=True)
+
+    def get_stride(self):
+        return super().get_info()["stride"]
+
+    def get_ker_size(self):
+        return super().get_info()["ker_size"]
+
+    def get_depthwise_status(self):
+        return super().get_info()["depthwise"]
