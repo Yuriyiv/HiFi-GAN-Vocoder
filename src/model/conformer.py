@@ -6,8 +6,9 @@ from torch import Tensor, nn
 from torch.nn.attention import SDPBackend, sdpa_kernel
 from torchtune.modules import RotaryPositionalEmbeddings
 
-from src.model import BaselineModel
+from src.model import BaseModelABC
 from src.model.blocks import ConvDepthwiseSubsampler  # ConvSubsampler
+from src.utils import compute_output_shape
 
 
 class Attention(nn.Module):
@@ -131,7 +132,7 @@ class MultiHeadAttention(nn.Module):
 
 class MultiHeadSelfAttentionModule(nn.Module):
     def __init__(
-        self, input_dim: int, output_dim: int, num_heads: int, dropout: float
+        self, input_dim: int, output_dim: int, num_heads: int, dropout: float = 0.1
     ) -> None:
         """
         Initializes the multi-head self-attention module with layer normalization and dropout.
@@ -173,6 +174,7 @@ class ConvModule(nn.Module):
         conv_expansion_factor: int,
         depthwise_ker_size: int,
         bias: bool = False,
+        dropout: float = 0.1,
     ) -> None:
         """
         Initializes the convolution module with normalization, GatedLinearUnit activation, and depthwise convolutions.
@@ -205,7 +207,7 @@ class ConvModule(nn.Module):
         self.pointwise_second = nn.Conv1d(
             dim * conv_expansion_factor // 2, dim, kernel_size=1, bias=bias
         )
-        self.dropout = nn.Dropout()
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -223,7 +225,7 @@ class ConvModule(nn.Module):
             (0, 2, 1)
         )  # (batch_size, length, channels) -> (batch_size, channels, length)
         x = self.pointwise_first(x)
-        x = self.glu(x, dim=1)
+        x = self.glu(x)
         x = self.depthwise(x)
         x = self.batch_norm(x)
         x = self.swish(x)
@@ -246,6 +248,12 @@ class FeedForwardModule(nn.Module):
             bias (bool): Whether to use bias in linear layers. Defaults to True.
         """
         super().__init__()
+        assert isinstance(
+            input_dim, int
+        ), f"input_dim should be int, got {type(input_dim)}"
+        assert isinstance(
+            hidden_dim, int
+        ), f"hidden_dim should be int, got {type(hidden_dim)}"
         self.ff_layer = nn.Sequential(
             nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim, bias=bias),
@@ -304,6 +312,23 @@ class ConformerBlock(nn.Module):
         Initializes the components of the ConformerBlock
         """
         super().__init__()
+
+        assert isinstance(
+            input_dim, int
+        ), f"input_dim should be int, got {type(input_dim)}"
+        assert isinstance(
+            feed_forw_dim, int
+        ), f"feed_forw_dim should be int, got {type(feed_forw_dim)}"
+        assert isinstance(
+            num_att_heads, int
+        ), f"num_att_heads should be int, got {type(num_att_heads)}"
+        assert isinstance(
+            conv_expansion_factor, int
+        ), f"conv_expansion_factor should be int, got {type(conv_expansion_factor)}"
+        assert isinstance(
+            depthwise_ker_size, int
+        ), f"depthwise_ker_size should be int, got {type(depthwise_ker_size)}"
+
         self.feed_forward_first = FeedForwardModule(
             input_dim, feed_forw_dim
         )  # input -> input
@@ -373,7 +398,18 @@ class ConformerEncoder(nn.Module):
         Initializes the ConformerEncoder
         """
         super().__init__()
-        # self.rotary_dim = rotary_dim or feed_forw_dim
+
+        if rotary_dim is None:
+            assert (
+                input_dim % 2 == 0
+            ), "input_dim must be even for RotaryPositionalEmbeddings"
+            self.rotary_dim = input_dim // 2
+        else:
+            self.rotary_dim = rotary_dim
+            assert (
+                input_dim % 2 == 0
+            ), "input_dim must be even for RotaryPositionalEmbeddings"
+
         feed_forw_dim = feed_forw_dim or 4 * input_dim
         self.conformer_blocks = nn.ModuleList(
             [
@@ -387,7 +423,7 @@ class ConformerEncoder(nn.Module):
                 for _ in range(num_conform_blocks)
             ]
         )
-        self.pos_enc = pos_encoder(rotary_dim)
+        self.pos_enc = pos_encoder(self.rotary_dim)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -399,13 +435,14 @@ class ConformerEncoder(nn.Module):
         Returns:
             Tensor: Output tensor of shape (batch_size, time (seq_length), input_dim).
         """
-        x = self.pos_enc(x)
+        print(x.shape)
+        # x = self.pos_enc(x)
         for block in self.conformer_blocks:
             x = block(x)
         return x
 
 
-class ConformerModel(BaselineModel):
+class ConformerModel(BaseModelABC):
     """
     A Conformer implementation. Originally proposed in https://arxiv.org/abs/2005.08100
     Conformer is a neural network architecture that combines Conformer encoders with
@@ -444,7 +481,7 @@ class ConformerModel(BaselineModel):
         num_att_heads: int,
         ker_size: int,
         n_tokens: int,
-        # freq: int,
+        freq: int,
         conv_expansion_factor: int = 2,
         feed_forw_dim: Optional[int] = None,
         pos_encoder: nn.Module = RotaryPositionalEmbeddings,
@@ -458,11 +495,14 @@ class ConformerModel(BaselineModel):
             fc_hidden (int): number of hidden features.
         """
         super().__init__()
+
         feed_forw_dim = feed_forw_dim or 4 * encoder_dim
         self.encoder_dim = encoder_dim
+        self.freq = freq
 
-        self.subsampler = subsampler_cls(input_dim=1, out_dim=encoder_dim)
-        # self.linear = nn.Linear(encoder_dim * freq, encoder_dim) # Define linear in forward pass
+        self.subsampler = subsampler_cls(input_dim=freq, out_dim=encoder_dim)
+        new_freq = self.get_subsampler_output_dim(self.freq, self.subsampler)
+        self.linear_projection = nn.Linear(encoder_dim * new_freq, encoder_dim)
         self.dropout = nn.Dropout(0.1)
         self.encoder = ConformerEncoder(
             encoder_dim,
@@ -472,6 +512,7 @@ class ConformerModel(BaselineModel):
             conv_expansion_factor,
             feed_forw_dim,
             pos_encoder,
+            rotary_dim=encoder_dim // 2,
         )
         self.decoder = decoder_cls(encoder_dim, decoder_dim, batch_first=True)
         self.classification_head = nn.Linear(
@@ -489,14 +530,6 @@ class ConformerModel(BaselineModel):
             Dict[str, Tensor]: output dict containing log_probs and
                 transformed lengths.
         """
-
-        if not hasattr(self, "linear_projection"):
-            if not hasattr(self, "freq"):
-                self.freq = spectrogram.size(1)  # [batch_size, n_mels (freq), time]
-            self.linear_projection = nn.Linear(
-                self.encoder_dim * self.freq, self.encoder_dim
-            )
-
         x = spectrogram.transpose(1, 2)  # [batch_size, time, n_mels (freq)]
         x = self.subsampler(
             x
@@ -504,7 +537,7 @@ class ConformerModel(BaselineModel):
         x = x.transpose(1, 2).flatten(
             2
         )  # [batch_size, time_subsampled, encoder_dim * freq_subsampled]
-        x = self.linear(x)  # [batch_size, time_subsampled, encoder_dim]
+        x = self.linear_projection(x)  # [batch_size, time_subsampled, encoder_dim]
         x = self.dropout(x)
         x_encoded = self.encoder(x)  # [batch_size, time_subsampled, encoder_dim]
         x_decoded, _ = self.decoder(
@@ -518,3 +551,25 @@ class ConformerModel(BaselineModel):
         )  # [batch_size, time_subsampled, n_tokens]
         log_probs_length = self.transform_input_lengths(spectrogram_length)
         return {"log_probs": log_probs, "log_probs_length": log_probs_length}
+
+    def transform_input_lengths(self, input_lengths):
+        """
+        As the network may compress the Time dimension, we need to know
+        what are the new temporal lengths after compression.
+
+        Args:
+            input_lengths (Tensor): old input lengths
+        Returns:
+            output_lengths (Tensor): new temporal lengths
+        """
+        print(input_lengths)
+        return self.get_subsampler_output_dim(input_lengths, self.subsampler)
+
+    def get_subsampler_output_dim(self, input_dim, sampler):
+        depthwise = sampler.get_depthwise_status()
+        ker_size_2 = 1 if depthwise else sampler.get_ker_size()
+        output_dim = compute_output_shape(
+            input_dim, sampler.get_ker_size(), sampler.get_stride()
+        )
+        output_dim = compute_output_shape(output_dim, ker_size_2, sampler.get_stride())
+        return output_dim
