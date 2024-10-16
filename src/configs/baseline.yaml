@@ -4,7 +4,7 @@ defaults:
   - metrics: example
   - datasets: example
   - dataloader: example
-  - transforms: example_only_instance
+  - transforms: example_only_instance #example #
   - _self_
 optimizer:
   _target_: torch.optim.AdamW
@@ -22,7 +22,7 @@ text_encoder:
   _target_: src.text_encoder.CTCTextEncoder
 trainer:
   log_step: 50
-  n_epochs: 50
+  n_epochs: 200 #50
   epoch_len: 200
   device_tensors: ["spectrogram", "text_encoded"] # which tensors should be on device (ex. GPU)
   resume_from: null # null or path to the checkpoint dir with *.pth and config.yaml
