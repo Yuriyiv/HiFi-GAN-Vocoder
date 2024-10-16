@@ -5,4 +5,3 @@ num_conform_blocks: 16
 num_att_heads: 4
 ker_size: 32
 conv_expansion_factor: 2
-feed_forw_dim: None # x4 if None
