@@ -5,3 +5,4 @@ num_conform_blocks: 16
 num_att_heads: 4
 ker_size: 32
 conv_expansion_factor: 2
+freq: ${transforms.instance_transforms.train.get_spectrogram.n_mels}

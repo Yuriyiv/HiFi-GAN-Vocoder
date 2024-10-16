@@ -4,13 +4,11 @@ train:
     sample_rate: 16000
     hop_length: 160 # for 10 ms as 160 frames stride len / 16 000 frames per sec = 0.01 s = 10 ms
     n_mels: 80 # default value of 128 leads to zero mel filterbanks
-  spectrogram:
-    _target_: torch.log # to get log mel spectrogram
   audio: # name of the tensor on which we apply transform
     _target_: torchvision.transforms.v2.Compose
     transforms:
       - _target_: src.transforms.wav_augs.Gain
-      - p: 0.1
+      # - p: 0.1
 inference:
   get_spectrogram:
     _target_: torchaudio.transforms.MelSpectrogram
