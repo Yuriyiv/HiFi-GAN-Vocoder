@@ -435,7 +435,7 @@ class ConformerEncoder(nn.Module):
         Returns:
             Tensor: Output tensor of shape (batch_size, time (seq_length), input_dim).
         """
-        print(x.shape)
+        # print(x.shape)
         # x = self.pos_enc(x)
         for block in self.conformer_blocks:
             x = block(x)
@@ -562,7 +562,7 @@ class ConformerModel(BaseModelABC):
         Returns:
             output_lengths (Tensor): new temporal lengths
         """
-        print(input_lengths)
+
         return self.get_subsampler_output_dim(input_lengths, self.subsampler)
 
     def get_subsampler_output_dim(self, input_dim, sampler):
