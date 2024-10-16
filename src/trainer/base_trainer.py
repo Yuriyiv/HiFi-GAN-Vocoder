@@ -5,6 +5,7 @@ from numpy import inf
 from torch.nn.utils import clip_grad_norm_
 from tqdm.auto import tqdm
 
+# import gc
 from src.datasets.data_utils import inf_loop
 from src.metrics.tracker import MetricTracker
 from src.utils.io_utils import ROOT_PATH
@@ -58,6 +59,7 @@ class BaseTrainer:
                 tensor name.
         """
         self.is_train = True
+        # torch.cuda.empty_cache()
 
         self.config = config
         self.cfg_trainer = self.config.trainer
@@ -154,6 +156,7 @@ class BaseTrainer:
         except KeyboardInterrupt as e:
             self.logger.info("Saving model on keyboard interrupt")
             self._save_checkpoint(self._last_epoch, save_best=False)
+            torch.cuda.empty_cache()
             raise e
 
     def _train_process(self):
@@ -175,7 +178,7 @@ class BaseTrainer:
 
             # print logged information to the screen
             for key, value in logs.items():
-                self.logger.info(f"    {key:15s}: {value}")
+                self.logger.info(f"    {key: 15s}: {value}")
 
             # evaluate model performance according to configured metric,
             # save best checkpoint as model_best
