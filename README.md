@@ -1,4 +1,4 @@
-# Automatic Speech Recognition (ASR) with PyTorch
+# Audio-Visual Source Separation with PyTorch
 
 <p align="center">
   <a href="#about">About</a> •
