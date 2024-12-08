@@ -1,4 +1,4 @@
-# Audio-Visual Source Separation with PyTorch
+# Neural Vocoder with PyTorch
 
 <p align="center">
   <a href="#about">About</a> •
